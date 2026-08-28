@@ -1,0 +1,7 @@
+DocuChat is a RAG-powered chat application.
+
+RAG stands for Retrieval-Augmented Generation.
+
+DocuChat allows users to upload documents, convert the document text into chunks, generate embeddings, and store those embeddings in PostgreSQL using pgvector.
+
+When a user asks a question, DocuChat retrieves relevant document chunks and uses them to generate a grounded answer.
