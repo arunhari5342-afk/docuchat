@@ -4,6 +4,9 @@ from sqlalchemy.orm import Session
 from app.services.embedding import generate_embedding
 
 
+SIMILARITY_THRESHOLD = 0.6
+
+
 def retrieve_similar_chunks(
     db: Session,
     query: str,
@@ -23,6 +26,7 @@ def retrieve_similar_chunks(
         FROM document_chunks dc
         JOIN documents d
             ON d.id = dc.document_id
+        WHERE dc.embedding <=> CAST(:query_embedding AS vector) <= :threshold
         ORDER BY dc.embedding <=> CAST(:query_embedding AS vector)
         LIMIT :top_k
         """
@@ -33,6 +37,7 @@ def retrieve_similar_chunks(
         {
             "query_embedding": str(query_embedding),
             "top_k": top_k,
+            "threshold": SIMILARITY_THRESHOLD,
         },
     )
 

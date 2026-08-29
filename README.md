@@ -4,58 +4,111 @@ DocuChat is a RAG-powered conversational chat application that allows users to u
 
 ## Project Overview
 
-DocuChat combines document ingestion, vector search, retrieval-augmented generation, and conversational memory into a single FastAPI application.
+DocuChat combines document ingestion, vector search, retrieval-augmented generation, question rewriting, and conversational memory into a FastAPI application.
 
-### Technologies Used
+The application supports:
+
+* TXT and PDF document uploads
+* Text extraction
+* Text chunking
+* Embedding generation
+* PostgreSQL + pgvector vector storage
+* Semantic search
+* Question rewriting for follow-up questions
+* Context-aware conversational chat
+* Grounded LLM generation
+* Document listing, retrieval, and deletion
+* RAG hallucination protection
+* Conversation history
+* Source tracking
+
+## Technologies Used
 
 * Python
 * FastAPI
-* PostgreSQL
+* PostgreSQL 17
 * pgvector
 * SQLAlchemy
 * Sentence Transformers
-* Groq LLM
+* Groq API
+* OpenAI Python SDK
 * Docker
 * Pydantic Settings
 * PyPDF
+* LangChain Text Splitters
 
 ## RAG Architecture
 
 ```text
-                Document Upload
+                    Document Upload
+                           |
+                           v
+                  TXT / PDF Extraction
+                           |
+                           v
+                     Text Chunking
+                           |
+                           v
+                 Embedding Generation
+                           |
+                           v
+                  PostgreSQL + pgvector
+                           |
+                           v
+                    Semantic Search
+                           |
+                           v
+                  Relevant Chunks
+                           |
+                           v
+                   Context Assembly
+                           |
+                           v
+                      Groq LLM
+                           |
+                           v
+                    Grounded Answer
+```
+
+## Conversational RAG Architecture
+
+For follow-up questions, DocuChat uses conversation history and a question rewriter.
+
+```text
+                  User Question
                        |
                        v
-              TXT / PDF Extraction
+               Conversation History
                        |
                        v
-                 Text Chunking
+                Question Rewriter
                        |
                        v
-              Embedding Generation
+              Standalone Question
                        |
                        v
-              PostgreSQL + pgvector
+              Query Embedding
                        |
                        v
-                Semantic Retrieval
+             pgvector Retrieval
                        |
                        v
-              Relevant Document Chunks
+                Relevant Chunks
                        |
                        v
                 Context Assembly
                        |
                        v
-                  Groq LLM
+                    Groq LLM
                        |
                        v
                 Grounded Answer
                        |
                        v
-              Conversation History
+               Save Message to DB
                        |
                        v
-                 Chat Response
+                  Chat Response
 ```
 
 ## How DocuChat Works
@@ -97,6 +150,12 @@ all-MiniLM-L6-v2
 
 The model converts text into numerical vectors.
 
+The generated embeddings have 384 dimensions:
+
+```text
+VECTOR(384)
+```
+
 These vectors allow the application to compare the semantic meaning of a user's question with document chunks.
 
 ### 4. Vector Storage
@@ -109,15 +168,21 @@ The main vector column is:
 document_chunks.embedding
 ```
 
+The column is defined as:
+
+```sql
+embedding VECTOR(384)
+```
+
 Similarity is calculated using the pgvector distance operator:
 
 ```sql
-<=> 
+<=>
 ```
 
 ### 5. Semantic Retrieval
 
-When a user asks a question:
+When a user asks a question, DocuChat:
 
 ```text
 User Question
@@ -129,15 +194,63 @@ Generate Query Embedding
 Compare Against Document Embeddings
       |
       v
+Calculate Vector Distance
+      |
+      v
 Sort By Similarity
       |
       v
 Return Top-K Chunks
 ```
 
-The application retrieves the most relevant document chunks.
+The application retrieves the most semantically relevant document chunks.
 
-### 6. Grounded Generation
+The retrieval query uses:
+
+```sql
+ORDER BY dc.embedding <=> CAST(:query_embedding AS vector)
+```
+
+A smaller distance indicates greater similarity.
+
+### 6. Question Rewriting
+
+DocuChat supports follow-up questions that contain references such as:
+
+```text
+it
+they
+this
+that
+these
+those
+```
+
+For example:
+
+```text
+User:
+What technologies does DocuChat use?
+
+Assistant:
+DocuChat uses document ingestion, embeddings, pgvector,
+semantic retrieval, and grounded generation.
+
+User:
+What does it use for semantic search?
+```
+
+The question rewriter converts the follow-up question into a standalone question:
+
+```text
+What does DocuChat use for semantic search?
+```
+
+The rewritten question is then converted into an embedding and used for semantic retrieval.
+
+This improves retrieval for multi-turn conversations.
+
+### 7. Grounded Generation
 
 The retrieved chunks are passed to the LLM as document context.
 
@@ -146,6 +259,7 @@ The model is instructed to:
 * Use only the supplied document context.
 * Avoid inventing information.
 * Use conversation history only to understand follow-up questions.
+* Answer only from retrieved document information.
 * Return a fixed response when the answer cannot be found.
 
 When no relevant answer is available, DocuChat returns:
@@ -154,27 +268,31 @@ When no relevant answer is available, DocuChat returns:
 I could not find the answer in the uploaded documents.
 ```
 
-### 7. Conversational Chat
+### 8. Conversational Chat
 
 DocuChat supports multi-turn conversations.
 
-For example:
+Example:
 
 ```text
 User:
+
 What is DocuChat?
 
 Assistant:
+
 DocuChat is a RAG-powered chat application...
 
 User:
+
 What does it use to store the embeddings?
 
 Assistant:
+
 It stores the embeddings in PostgreSQL using pgvector.
 ```
 
-The second question can use the previous conversation context to understand what "it" refers to.
+The conversation history allows the question rewriter to understand what `"it"` refers to.
 
 ## Database Schema
 
@@ -215,17 +333,17 @@ Important fields:
 
 ```text
 id
+user_id
 filename
 file_type
 file_path
 metadata
 created_at
-user_id
 ```
 
 ### Document Chunks
 
-Stores the individual text chunks and their embeddings.
+Stores individual text chunks and their embeddings.
 
 Important fields:
 
@@ -321,19 +439,19 @@ POST /documents/upload
 
 Uploads and indexes a `.txt` or `.pdf` document.
 
-The document is:
+The document processing pipeline is:
 
 ```text
 Upload
-  ↓
+   ↓
 Save
-  ↓
+   ↓
 Extract
-  ↓
+   ↓
 Chunk
-  ↓
+   ↓
 Embed
-  ↓
+   ↓
 Store
 ```
 
@@ -361,6 +479,8 @@ DELETE /documents/{document_id}
 
 Deletes a document and its related chunks.
 
+Document chunks are automatically removed through the database foreign-key cascade.
+
 ### Semantic Search
 
 ```http
@@ -371,8 +491,26 @@ Returns the most relevant document chunks.
 
 Example:
 
-```text
+```http
 GET /search?query=What is DocuChat?&top_k=5
+```
+
+Example response:
+
+```json
+{
+  "query": "What is DocuChat?",
+  "results": [
+    {
+      "chunk_id": "485f3221-f512-4ef9-b9da-f19c15cddfbf",
+      "document_id": "937bcd74-2770-453c-8691-87eaaf9babf7",
+      "chunk_index": 0,
+      "content": "DocuChat is a RAG-powered chat application...",
+      "filename": "test.txt",
+      "distance": 0.2154
+    }
+  ]
+}
 ```
 
 ### Chat
@@ -385,6 +523,8 @@ Generates a grounded answer using:
 
 ```text
 Conversation History
+        +
+Question Rewriting
         +
 Semantic Retrieval
         +
@@ -456,6 +596,7 @@ docuchat/
 │   │   ├── embedding.py
 │   │   ├── retrieval.py
 │   │   ├── llm.py
+│   │   ├── question_rewriter.py
 │   │   ├── __init__.py
 │   │   │
 │   │   └── ingestion/
@@ -482,7 +623,7 @@ docuchat/
 Create a `.env` file in the project root.
 
 ```env
-DATABASE_URL=postgresql+psycopg://docuchat_user:docuchat_password@127.0.0.1:5434/docuchat
+DATABASE_URL=postgresql+psycopg://docuchat_user:docuchat_password@127.0.0.1:5432/docuchat
 
 GROQ_API_KEY="your_groq_api_key"
 ```
@@ -491,11 +632,39 @@ Never commit the real `.env` file or API key to GitHub.
 
 Use `.env.example` for sharing the required configuration structure.
 
+Example `.gitignore` entry:
+
+```text
+.env
+```
+
+## PostgreSQL and pgvector
+
+DocuChat uses PostgreSQL 17 with the pgvector extension.
+
+Enable pgvector with:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+Verify the extension:
+
+```sql
+SELECT extname, extversion
+FROM pg_extension
+WHERE extname = 'vector';
+```
+
+The application uses a 384-dimensional vector column:
+
+```sql
+embedding VECTOR(384)
+```
+
 ## Running PostgreSQL
 
-Docker Compose is used to run PostgreSQL with pgvector.
-
-Start the database:
+If PostgreSQL is configured through Docker Compose, start it with:
 
 ```powershell
 docker compose up -d
@@ -507,22 +676,13 @@ Check running containers:
 docker ps
 ```
 
-The PostgreSQL database is exposed locally through:
+The application database configuration currently uses:
 
 ```text
-127.0.0.1:5434
-```
-
-Database:
-
-```text
-docuchat
-```
-
-User:
-
-```text
-docuchat_user
+Host: 127.0.0.1
+Port: 5432
+Database: docuchat
+User: docuchat_user
 ```
 
 ## Running the Application
@@ -545,7 +705,7 @@ Start FastAPI:
 uvicorn app.main:app --reload
 ```
 
-The application will run at:
+The application runs at:
 
 ```text
 http://127.0.0.1:8000
@@ -557,6 +717,26 @@ FastAPI Swagger documentation:
 http://127.0.0.1:8000/docs
 ```
 
+## Requirements
+
+The main Python dependencies are:
+
+```text
+fastapi==0.141.1
+uvicorn==0.52.4
+SQLAlchemy==2.0.52
+psycopg==3.3.4
+psycopg-binary==3.3.4
+pgvector==0.5.0
+pydantic==2.13.4
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
+pypdf==6.1.0
+langchain-text-splitters
+sentence-transformers
+openai
+```
+
 ## Testing
 
 The project was tested using:
@@ -566,43 +746,127 @@ The project was tested using:
 * PostgreSQL queries
 * Semantic retrieval tests
 * RAG evaluation tests
+* Follow-up question tests
+* Hallucination protection tests
 
-### Retrieval Test
+### Database Verification
 
-The retrieval pipeline successfully returned relevant chunks from:
+After uploading a document, document records can be checked with:
 
-```text
-test.txt
-IndusValleyCivilization.pdf
+```sql
+SELECT * FROM documents;
 ```
 
-### Chat Test
+Document chunks can be checked with:
+
+```sql
+SELECT * FROM document_chunks;
+```
+
+Verify embedding dimensions:
+
+```sql
+SELECT
+    id,
+    document_id,
+    chunk_index,
+    vector_dims(embedding) AS embedding_dimensions
+FROM document_chunks;
+```
+
+Expected embedding dimension:
+
+```text
+384
+```
+
+Verify document chunk counts:
+
+```sql
+SELECT
+    d.filename,
+    COUNT(dc.id) AS chunk_count
+FROM documents d
+LEFT JOIN document_chunks dc
+    ON d.id = dc.document_id
+GROUP BY d.id, d.filename;
+```
+
+## Retrieval Test
+
+The retrieval pipeline successfully returns relevant chunks from uploaded documents.
 
 Example:
 
 ```text
-Question:
-What is DocuChat?
-
-Answer:
-DocuChat is a RAG-powered chat application that lets users
-upload documents, split the text into chunks, generate
-embeddings, and store those embeddings in PostgreSQL
-using pgvector.
+============================================================
+RESULT 1
+Distance: 0.26260404213642696
+Filename: test.txt
+Chunk: 0
+Content: DocuChat is a RAG powered chat application. It uses
+document ingestion, embeddings, pgvector, semantic retrieval
+and grounded generation.
 ```
 
-### Follow-up Test
+## Chat Test
+
+Example question:
 
 ```text
-Question:
-What does it use to store the embeddings?
-
-Answer:
-It stores the embeddings in a PostgreSQL database using
-the pgvector extension.
+What technologies does DocuChat use?
 ```
 
-This verifies conversational context handling.
+Example answer:
+
+```text
+DocuChat uses document ingestion, embeddings, pgvector,
+semantic retrieval, and grounded generation.
+```
+
+The response also includes the retrieved source chunk.
+
+## Follow-Up Question Test
+
+First question:
+
+```text
+What technologies does DocuChat use?
+```
+
+Follow-up question:
+
+```text
+What does it use for semantic search?
+```
+
+The question rewriter converts the follow-up into a standalone question before retrieval.
+
+The system can then return an answer such as:
+
+```text
+It uses semantic retrieval for semantic search.
+```
+
+This verifies conversational context handling and question rewriting.
+
+## Hallucination Protection Test
+
+DocuChat is designed to avoid answering questions using unsupported outside knowledge.
+
+Example:
+
+```text
+What is the capital of France?
+```
+
+Expected response:
+
+```text
+I could not find the answer in the uploaded documents.
+```
+
+The LLM is explicitly instructed to use only the retrieved document context.
 
 ## Evaluation
 
@@ -613,20 +877,9 @@ The project includes evaluation cases covering:
 3. Questions about different uploaded documents.
 4. Questions whose answers are not present.
 5. Requests for information not contained in the documents.
-
-Example out-of-context question:
-
-```text
-What is the capital of France?
-```
-
-Expected behavior:
-
-```text
-I could not find the answer in the uploaded documents.
-```
-
-This prevents the application from relying on unsupported outside information.
+6. Question rewriting for conversational references.
+7. Semantic retrieval quality.
+8. Grounded answer generation.
 
 ## Error Handling
 
@@ -634,7 +887,7 @@ DocuChat handles several invalid scenarios.
 
 ### Empty Query
 
-An empty chat query is rejected.
+An empty chat query is rejected:
 
 ```text
 Query cannot be empty.
@@ -687,7 +940,7 @@ to verify the pgvector extension.
 
 ## RAG Evaluation Concepts
 
-The project considers the following RAG evaluation areas:
+The project considers the following RAG evaluation areas.
 
 ### Faithfulness
 
@@ -705,11 +958,19 @@ Retrieved chunks should contain useful information for answering the question.
 
 The LLM should not invent information that is absent from the uploaded documents.
 
+### Retrieval Quality
+
+The retrieved chunks should be semantically related to the user's question.
+
+### Question Rewriting Quality
+
+Follow-up questions should be transformed into standalone questions without changing their intended meaning.
+
 ## Security and Configuration
 
 Sensitive configuration is stored using environment variables.
 
-The API key is not hard-coded in application source code.
+The Groq API key is not hard-coded in application source code.
 
 The `.env` file should remain excluded from Git.
 
@@ -720,6 +981,14 @@ Example:
 ```
 
 should be included in `.gitignore`.
+
+Use:
+
+```text
+.env.example
+```
+
+to document required environment variables without exposing secrets.
 
 ## Key Concepts Demonstrated
 
@@ -740,9 +1009,12 @@ This project demonstrates practical understanding of:
 * Metadata
 * Top-K retrieval
 * Similarity search
+* Vector distance
 * Context assembly
-* Grounded generation
+* Question rewriting
 * Conversational memory
+* Grounded generation
+* Hallucination protection
 * FastAPI
 * PostgreSQL
 * SQLAlchemy
@@ -754,48 +1026,57 @@ This project demonstrates practical understanding of:
 ## Project Data Flow
 
 ```text
-                 USER
-                  |
-                  v
-          Upload Document
-                  |
-                  v
-        Document Extraction
-                  |
-                  v
-             Chunking
-                  |
-                  v
-            Embeddings
-                  |
-                  v
-       PostgreSQL + pgvector
-                  |
-                  |
-        ---------------------
-        |                   |
-        v                   v
-     Search               Chat
-        |                   |
-        v                   v
-    Top-K Chunks      Conversation History
-        |                   |
-        -----------+---------
-                   |
-                   v
-             Context Assembly
-                   |
-                   v
-                Groq LLM
-                   |
-                   v
-           Grounded Response
-                   |
-                   v
-          Save Message to DB
-                   |
-                   v
-                USER
+                         USER
+                           |
+                           v
+                    Upload Document
+                           |
+                           v
+                  Document Extraction
+                           |
+                           v
+                       Chunking
+                           |
+                           v
+                     Embeddings
+                           |
+                           v
+                PostgreSQL + pgvector
+                           |
+                           |
+              +------------+------------+
+              |                         |
+              v                         v
+           Search                     Chat
+              |                         |
+              v                         v
+        Query Embedding          Conversation History
+              |                         |
+              v                         v
+        Top-K Chunks            Question Rewriter
+              |                         |
+              |                         v
+              |                 Standalone Question
+              |                         |
+              |                         v
+              |                  Semantic Retrieval
+              |                         |
+              +------------+------------+
+                           |
+                           v
+                    Context Assembly
+                           |
+                           v
+                        Groq LLM
+                           |
+                           v
+                    Grounded Response
+                           |
+                           v
+                   Save Message to DB
+                           |
+                           v
+                         USER
 ```
 
 ## Final Project Goal
@@ -803,30 +1084,34 @@ This project demonstrates practical understanding of:
 DocuChat demonstrates a complete production-style RAG workflow:
 
 ```text
-Ingestion
-    ↓
+Document Upload
+       ↓
 Document Processing
-    ↓
+       ↓
+Text Extraction
+       ↓
 Chunking
-    ↓
+       ↓
 Embedding Generation
-    ↓
+       ↓
 pgvector Storage
-    ↓
+       ↓
+Question Rewriting
+       ↓
 Semantic Retrieval
-    ↓
+       ↓
 Context Assembly
-    ↓
+       ↓
 Grounded LLM Generation
-    ↓
+       ↓
 Conversation Memory
-    ↓
+       ↓
 FastAPI Chat API
 ```
 
 ## Demo Flow
 
-The recommended 5-minute demonstration is:
+The recommended five-minute demonstration is:
 
 ### Step 1 — Show Application
 
@@ -837,6 +1122,12 @@ http://127.0.0.1:8000/docs
 ```
 
 ### Step 2 — Upload Document
+
+Use:
+
+```http
+POST /documents/upload
+```
 
 Upload a `.txt` or `.pdf` document.
 
@@ -852,19 +1143,19 @@ Show the document and chunk count.
 
 ### Step 4 — Perform Retrieval
 
+Use:
+
+```http
+GET /search
+```
+
 Ask:
 
 ```text
 What is DocuChat?
 ```
 
-using:
-
-```http
-GET /search
-```
-
-Show the retrieved chunk and similarity distance.
+Show the retrieved chunk and vector distance.
 
 ### Step 5 — Ask Chat Question
 
@@ -878,17 +1169,17 @@ Ask a question based on the uploaded document.
 
 ### Step 6 — Demonstrate Follow-Up
 
-Ask a follow-up question such as:
+Ask:
 
 ```text
 What does it use to store the embeddings?
 ```
 
-Show that the conversation history allows the application to understand the reference.
+Show that conversation history and question rewriting allow the application to understand the reference.
 
 ### Step 7 — Demonstrate Guardrail
 
-Ask something unrelated:
+Ask an unrelated question:
 
 ```text
 What is the capital of France?
@@ -902,6 +1193,32 @@ I could not find the answer in the uploaded documents.
 
 ## Conclusion
 
-DocuChat is a complete RAG-based conversational application that connects document ingestion, semantic vector retrieval, grounded LLM generation, and multi-turn conversation through a FastAPI backend.
+DocuChat is a complete RAG-based conversational application that connects document ingestion, semantic vector retrieval, question rewriting, grounded LLM generation, and multi-turn conversation through a FastAPI backend.
 
-The project demonstrates how private document knowledge can be transformed into a searchable vector representation and used to generate answers that remain grounded in retrieved source content.
+The project demonstrates how private document knowledge can be transformed into searchable vector representations and used to generate answers that remain grounded in retrieved source content.
+
+The application provides a practical implementation of a modern RAG pipeline:
+
+```text
+Ingestion
+    ↓
+Document Processing
+    ↓
+Chunking
+    ↓
+Embedding Generation
+    ↓
+pgvector Storage
+    ↓
+Question Rewriting
+    ↓
+Semantic Retrieval
+    ↓
+Context Assembly
+    ↓
+Grounded LLM Generation
+    ↓
+Conversation Memory
+    ↓
+FastAPI Chat API
+```

@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import Conversation, Message
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.llm import generate_answer
+from app.services.question_rewriter import rewrite_question
 from app.services.retrieval import retrieve_similar_chunks
 
 
@@ -37,6 +38,10 @@ def chat(
             detail="Query cannot be empty.",
         )
 
+    # ---------------------------------------------------------
+    # 1. Find existing conversation or create a new one
+    # ---------------------------------------------------------
+
     if request.conversation_id:
         conversation = (
             db.query(Conversation)
@@ -62,6 +67,10 @@ def chat(
         db.add(conversation)
         db.flush()
 
+    # ---------------------------------------------------------
+    # 2. Get previous conversation history
+    # ---------------------------------------------------------
+
     previous_messages = (
         db.query(Message)
         .filter(
@@ -76,20 +85,43 @@ def chat(
         for message in previous_messages
     )
 
+    # ---------------------------------------------------------
+    # 3. Rewrite follow-up question
+    # ---------------------------------------------------------
+
+    standalone_question = rewrite_question(
+        query=query,
+        history=history,
+    )
+
+    # ---------------------------------------------------------
+    # 4. Save original user question
+    # ---------------------------------------------------------
+
     user_message = Message(
         conversation_id=conversation.id,
         role="user",
         content=query,
-        message_metadata={},
+        message_metadata={
+            "rewritten_question": standalone_question,
+        },
     )
 
     db.add(user_message)
 
+    # ---------------------------------------------------------
+    # 5. Retrieve using rewritten question
+    # ---------------------------------------------------------
+
     results = retrieve_similar_chunks(
         db=db,
-        query=query,
+        query=standalone_question,
         top_k=request.top_k,
     )
+
+    # ---------------------------------------------------------
+    # 6. No relevant documents found
+    # ---------------------------------------------------------
 
     if not results:
         answer = (
@@ -103,6 +135,7 @@ def chat(
             content=answer,
             message_metadata={
                 "sources": [],
+                "rewritten_question": standalone_question,
             },
         )
 
@@ -116,16 +149,28 @@ def chat(
             sources=[],
         )
 
+    # ---------------------------------------------------------
+    # 7. Build document context
+    # ---------------------------------------------------------
+
     context = "\n\n".join(
         result["content"]
         for result in results
     )
+
+    # ---------------------------------------------------------
+    # 8. Generate grounded answer
+    # ---------------------------------------------------------
 
     answer = generate_answer(
         query=query,
         context=context,
         history=history,
     )
+
+    # ---------------------------------------------------------
+    # 9. Prepare sources
+    # ---------------------------------------------------------
 
     sources = [
         {
@@ -141,11 +186,16 @@ def chat(
         for result in results
     ]
 
+    # ---------------------------------------------------------
+    # 10. Save assistant response
+    # ---------------------------------------------------------
+
     assistant_message = Message(
         conversation_id=conversation.id,
         role="assistant",
         content=answer,
         message_metadata={
+            "rewritten_question": standalone_question,
             "sources": [
                 {
                     "chunk_id": str(source["chunk_id"]),
@@ -161,6 +211,10 @@ def chat(
     db.add(assistant_message)
 
     db.commit()
+
+    # ---------------------------------------------------------
+    # 11. Return response
+    # ---------------------------------------------------------
 
     return ChatResponse(
         conversation_id=conversation.id,

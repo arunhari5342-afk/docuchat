@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, UploadFile, status, HTTPException
 from sqlalchemy.orm import Session
@@ -132,9 +133,13 @@ def delete_document(
         )
 
     filename = document.filename
+    file_path = Path(document.file_path)
 
     db.delete(document)
     db.commit()
+
+    if file_path.exists():
+        file_path.unlink()
 
     return {
         "message": "Document deleted successfully",
