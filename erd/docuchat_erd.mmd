@@ -1,0 +1,50 @@
+erDiagram
+
+    USERS {
+        UUID id PK
+        VARCHAR email
+        VARCHAR password_hash
+        TIMESTAMPTZ created_at
+    }
+
+    DOCUMENTS {
+        UUID id PK
+        UUID user_id FK
+        VARCHAR filename
+        VARCHAR file_type
+        TEXT file_path
+        JSONB metadata
+        TIMESTAMPTZ created_at
+    }
+
+    DOCUMENT_CHUNKS {
+        UUID id PK
+        UUID document_id FK
+        INTEGER chunk_index
+        TEXT content
+        VECTOR_384 embedding
+        JSONB metadata
+        TIMESTAMPTZ created_at
+    }
+
+    CONVERSATIONS {
+        UUID id PK
+        UUID user_id FK
+        VARCHAR title
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
+    MESSAGES {
+        UUID id PK
+        UUID conversation_id FK
+        VARCHAR role
+        TEXT content
+        JSONB metadata
+        TIMESTAMPTZ created_at
+    }
+
+    USERS ||--o{ DOCUMENTS : owns
+    USERS ||--o{ CONVERSATIONS : has
+    DOCUMENTS ||--o{ DOCUMENT_CHUNKS : contains
+    CONVERSATIONS ||--o{ MESSAGES : contains
