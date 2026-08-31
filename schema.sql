@@ -1,9 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 
--- ============================================================
--- USERS
--- ============================================================
+
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
@@ -13,9 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 
--- ============================================================
--- DOCUMENTS
--- ============================================================
+
 
 CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY,
@@ -36,9 +32,7 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 
--- ============================================================
--- DOCUMENT CHUNKS
--- ============================================================
+
 
 CREATE TABLE IF NOT EXISTS document_chunks (
     id UUID PRIMARY KEY,
@@ -62,9 +56,7 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 );
 
 
--- ============================================================
--- CONVERSATIONS
--- ============================================================
+
 
 CREATE TABLE IF NOT EXISTS conversations (
     id UUID PRIMARY KEY,
@@ -84,9 +76,8 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 
 
--- ============================================================
--- MESSAGES
--- ============================================================
+
+
 
 CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY,
@@ -111,9 +102,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 
--- ============================================================
--- INDEXES
--- ============================================================
+
 
 CREATE INDEX IF NOT EXISTS idx_users_email
 ON users(email);

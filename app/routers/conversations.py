@@ -13,7 +13,7 @@ router = APIRouter(
 )
 
 
-# Create a new conversation
+
 @router.post("", status_code=201)
 def create_conversation(
     title: str | None = None,
@@ -35,7 +35,7 @@ def create_conversation(
     }
 
 
-# List all conversations
+
 @router.get("")
 def list_conversations(
     db: Session = Depends(get_db),
@@ -59,7 +59,7 @@ def list_conversations(
     }
 
 
-# Get a single conversation with messages
+
 @router.get("/{conversation_id}")
 def get_conversation(
     conversation_id: uuid.UUID,
@@ -100,7 +100,7 @@ def get_conversation(
     }
 
 
-# Delete a conversation
+
 @router.delete("/{conversation_id}")
 def delete_conversation(
     conversation_id: uuid.UUID,

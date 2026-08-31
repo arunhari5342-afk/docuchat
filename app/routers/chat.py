@@ -38,9 +38,7 @@ def chat(
             detail="Query cannot be empty.",
         )
 
-    # ---------------------------------------------------------
-    # 1. Find existing conversation or create a new one
-    # ---------------------------------------------------------
+   
 
     if request.conversation_id:
         conversation = (
@@ -67,9 +65,7 @@ def chat(
         db.add(conversation)
         db.flush()
 
-    # ---------------------------------------------------------
-    # 2. Get previous conversation history
-    # ---------------------------------------------------------
+    
 
     previous_messages = (
         db.query(Message)
@@ -85,18 +81,13 @@ def chat(
         for message in previous_messages
     )
 
-    # ---------------------------------------------------------
-    # 3. Rewrite follow-up question
-    # ---------------------------------------------------------
 
     standalone_question = rewrite_question(
         query=query,
         history=history,
     )
 
-    # ---------------------------------------------------------
-    # 4. Save original user question
-    # ---------------------------------------------------------
+    
 
     user_message = Message(
         conversation_id=conversation.id,
@@ -109,9 +100,7 @@ def chat(
 
     db.add(user_message)
 
-    # ---------------------------------------------------------
-    # 5. Retrieve using rewritten question
-    # ---------------------------------------------------------
+    
 
     results = retrieve_similar_chunks(
         db=db,
@@ -119,9 +108,7 @@ def chat(
         top_k=request.top_k,
     )
 
-    # ---------------------------------------------------------
-    # 6. No relevant documents found
-    # ---------------------------------------------------------
+  
 
     if not results:
         answer = (
@@ -149,18 +136,14 @@ def chat(
             sources=[],
         )
 
-    # ---------------------------------------------------------
-    # 7. Build document context
-    # ---------------------------------------------------------
+   
 
     context = "\n\n".join(
         result["content"]
         for result in results
     )
 
-    # ---------------------------------------------------------
-    # 8. Generate grounded answer
-    # ---------------------------------------------------------
+   
 
     answer = generate_answer(
         query=query,
@@ -168,9 +151,7 @@ def chat(
         history=history,
     )
 
-    # ---------------------------------------------------------
-    # 9. Prepare sources
-    # ---------------------------------------------------------
+   
 
     sources = [
         {
@@ -186,9 +167,7 @@ def chat(
         for result in results
     ]
 
-    # ---------------------------------------------------------
-    # 10. Save assistant response
-    # ---------------------------------------------------------
+  
 
     assistant_message = Message(
         conversation_id=conversation.id,
@@ -212,9 +191,7 @@ def chat(
 
     db.commit()
 
-    # ---------------------------------------------------------
-    # 11. Return response
-    # ---------------------------------------------------------
+   
 
     return ChatResponse(
         conversation_id=conversation.id,

@@ -25,7 +25,7 @@ def ingest_document(
     file_content: bytes,
 ) -> Document:
 
-    # 1. Generate unique filename
+    
     file_extension = Path(filename).suffix.lower()
 
     stored_filename = (
@@ -34,10 +34,10 @@ def ingest_document(
 
     file_path = UPLOAD_DIR / stored_filename
 
-    # 2. Save physical file
+    
     file_path.write_bytes(file_content)
 
-    # 3. Extract text
+    
     text = load_document(str(file_path))
 
     if not text.strip():
@@ -45,7 +45,7 @@ def ingest_document(
             "The uploaded document contains no readable text"
         )
 
-    # 4. Split into chunks
+    
     chunks = split_text(text)
 
     if not chunks:
@@ -53,10 +53,10 @@ def ingest_document(
             "No chunks were generated from the document"
         )
 
-    # 5. Generate embeddings
+    
     embeddings = generate_embeddings(chunks)
 
-    # 6. Create Document record
+    
     document = Document(
         user_id=DEMO_USER_ID,
         filename=filename,
@@ -71,7 +71,7 @@ def ingest_document(
     db.add(document)
     db.flush()
 
-    # 7. Create DocumentChunk records
+    
     for index, (chunk_text, embedding) in enumerate(
         zip(chunks, embeddings)
     ):
@@ -88,10 +88,10 @@ def ingest_document(
 
         db.add(chunk)
 
-    # 8. Commit everything
+    
     db.commit()
 
-    # 9. Refresh document
+    
     db.refresh(document)
 
     return document
